@@ -1,0 +1,31 @@
+server:
+  endpoint: opc.tcp://0.0.0.0:4840
+  namespace_uri: urn:opcua-simulator
+  object_name: Simulator
+
+node_id_template: ns=2;s={name}
+
+runtime:
+  update_interval_ms: 1000
+
+variables:
+  - name: thermometer
+    data_type: float
+    default: 22.0
+    unit: celsius
+    writable: true
+
+  - name: pump_running
+    data_type: boolean
+    default: false
+    writable: true
+
+  - name: batch_count
+    data_type: int
+    default: 0
+    writable: true
+
+  - name: status
+    data_type: string
+    default: ready
+    writable: true

@@ -1,0 +1,11 @@
+services:
+  opcua-simulator:
+    build: .
+    command: simulator
+    ports:
+      - "4840:4840"
+    environment:
+      SIMULATOR_CONFIG_PATH: ${SIMULATOR_CONFIG_PATH:-config/simulator.yaml}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./config:/app/config:ro

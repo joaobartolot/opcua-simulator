@@ -1,0 +1,26 @@
+[project]
+name = "opcua-simulator"
+version = "0.1.0"
+description = "Standalone configurable OPC UA simulator for local development and tests."
+authors = [{ name = "Joao Bartolot" }]
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "asyncua (>=1.1.8,<2.0.0)",
+    "pydantic-settings (>=2.11.0,<3.0.0)",
+    "pyyaml (>=6.0.2,<7.0.0)",
+]
+
+[dependency-groups]
+dev = ["pytest (>=9.0.0,<10.0.0)"]
+
+[project.scripts]
+simulator = "src.main:simulator_main"
+opcua-simulator = "src.main:simulator_main"
+
+[tool.poetry]
+packages = [{ include = "src" }]
+
+[build-system]
+requires = ["poetry-core>=1.9.0"]
+build-backend = "poetry.core.masonry.api"
