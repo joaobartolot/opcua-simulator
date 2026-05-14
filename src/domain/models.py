@@ -148,6 +148,24 @@ class SimulatorState:
             variable = self._variables[name]
             return SimulatorVariable(variable.definition, variable.value, variable.auto_update)
 
+    def add_variable(self, definition: VariableDefinition) -> SimulatorVariable:
+        with self._lock:
+            if definition.name in self._variables:
+                raise ValueError(f"duplicate variable name: {definition.name}")
+            if any(
+                variable.node_id == definition.node_id
+                for variable in self._variables.values()
+            ):
+                raise ValueError(f"duplicate variable node_id: {definition.node_id}")
+
+            variable = SimulatorVariable(
+                definition=definition,
+                value=definition.default,
+                auto_update=definition.generator is not None,
+            )
+            self._variables[definition.name] = variable
+            return SimulatorVariable(variable.definition, variable.value, variable.auto_update)
+
     def set_value(
         self,
         name: str,
@@ -161,11 +179,15 @@ class SimulatorState:
             variable.auto_update = auto_update
 
     def toggle_auto_update(self, name: str) -> None:
+        variable = self.get_variable(name)
+        self.set_auto_update(name, not variable.auto_update)
+
+    def set_auto_update(self, name: str, enabled: bool) -> None:
         with self._lock:
             variable = self._variables[name]
             if variable.definition.generator is None:
                 raise ValueError(f"variable has no generator: {name}")
-            variable.auto_update = not variable.auto_update
+            variable.auto_update = enabled
 
     def advance(self, tick: int) -> None:
         with self._lock:

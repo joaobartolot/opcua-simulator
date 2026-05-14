@@ -18,6 +18,9 @@ class FakeServer:
             {variable.name: variable.value for variable in state.list_variables()}
         )
 
+    async def add_variable(self, variable) -> None:
+        return None
+
     async def stop(self) -> None:
         self.stopped = True
 

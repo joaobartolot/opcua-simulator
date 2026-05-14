@@ -4,6 +4,9 @@ import os
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
+
+import uvicorn
 
 from src.application.simulator import run_simulator
 from src.dev.simulator_tui import run_simulator_tui
@@ -11,6 +14,7 @@ from src.domain.models import SimulatorSettings
 from src.infrastructure.config import load_settings
 from src.infrastructure.logger import configure_logging
 from src.infrastructure.opcua_server import AsyncuaSimulatorServer
+from src.infrastructure.web import create_app
 
 
 SettingsLoader = Callable[[str | Path | None], SimulatorSettings]
@@ -46,6 +50,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     return simulator_main(argv)
 
 
+def web_main(
+    argv: Sequence[str] | None = None,
+    *,
+    settings_loader: SettingsLoader = load_settings,
+    uvicorn_runner: Callable[..., Any] = uvicorn.run,
+) -> int:
+    args = _parse_web_args(argv)
+    log_level = os.getenv("LOG_LEVEL", "INFO")
+    configure_logging(log_level)
+    settings = settings_loader(args.config)
+    app = create_app(
+        settings,
+        static_dir=args.static_dir,
+        public_web_url=os.getenv("PUBLIC_WEB_URL"),
+    )
+    uvicorn_runner(app, host=args.host, port=args.port, log_config=None)
+    return 0
+
+
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="simulator")
     parser.add_argument(
@@ -58,6 +81,34 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--tui",
         action="store_true",
         help="Open an interactive terminal UI for editing configured variables.",
+    )
+    return parser.parse_args(argv)
+
+
+def _parse_web_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="simulator-web")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to simulator YAML config. Defaults to config/simulator.yaml or SIMULATOR_CONFIG_PATH.",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.getenv("WEB_HOST", "0.0.0.0"),
+        help="HTTP host for the web UI and API.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("WEB_PORT", "8080")),
+        help="HTTP port for the web UI and API.",
+    )
+    parser.add_argument(
+        "--static-dir",
+        type=Path,
+        default=Path(os.getenv("WEB_STATIC_DIR", "frontend/dist")),
+        help="Directory containing built React assets.",
     )
     return parser.parse_args(argv)
 

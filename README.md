@@ -9,6 +9,7 @@ It is responsible for:
 - Serving OPC UA variables on a local endpoint
 - Generating deterministic test values
 - Exposing stable node ids for configured variables
+- Providing a browser UI for manual value changes
 - Supporting manual value changes through an optional terminal UI
 - Running locally or in Docker
 
@@ -42,6 +43,8 @@ The simulator should stay independent from any single product, service, or deplo
 - Python 3.14
 - Poetry
 - OPC UA server: `asyncua`
+- Web API: FastAPI
+- Frontend: React, TypeScript, Vite, Tailwind CSS
 - YAML configuration
 - pytest
 - Docker / Docker Compose
@@ -88,6 +91,7 @@ Environment variables are reserved for deployment overrides and secrets if secre
 Supported environment overrides:
 
 - `SIMULATOR_CONFIG_PATH`
+- `PUBLIC_WEB_URL`
 - `LOG_LEVEL`
 
 Configuration areas:
@@ -166,6 +170,18 @@ Run the simulator:
 poetry run simulator
 ```
 
+Run the simulator with the web UI/API:
+
+```bash
+poetry run simulator-web
+```
+
+The web UI is available at:
+
+```text
+http://localhost:8080
+```
+
 Run with an alternate config:
 
 ```bash
@@ -191,6 +207,21 @@ opc.tcp://0.0.0.0:4840
 ```bash
 docker compose up --build
 ```
+
+Compose starts the OPC UA simulator and web UI in one container.
+
+- Web UI/API: `http://localhost:8080`
+- OPC UA endpoint: `opc.tcp://localhost:4840`
+
+To scan the startup QR code from a phone, set the public URL to your computer's LAN address:
+
+```bash
+PUBLIC_WEB_URL=http://<your-computer-lan-ip>:8080 docker compose up --build
+```
+
+The service prints an ASCII QR code for `PUBLIC_WEB_URL` during startup, and the web UI also shows the same QR code.
+
+The web UI can add temporary runtime tags. These tags are exposed through OPC UA immediately, but they are not persisted to `config/simulator.yaml`; restarting the simulator returns to the configured tags only.
 
 ---
 

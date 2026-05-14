@@ -3,7 +3,7 @@ import threading
 from collections.abc import Awaitable, Callable
 from typing import Protocol
 
-from src.domain.models import SimulatorSettings, SimulatorState
+from src.domain.models import SimulatorSettings, SimulatorState, SimulatorVariable
 
 
 Sleep = Callable[[float], Awaitable[None]]
@@ -15,6 +15,9 @@ class SimulatorServer(Protocol):
 
     async def sync(self, state: SimulatorState) -> None:
         """Write current simulator state to exposed OPC UA variables."""
+
+    async def add_variable(self, variable: SimulatorVariable) -> None:
+        """Expose a newly added runtime variable."""
 
     async def stop(self) -> None:
         """Stop the external OPC UA server."""

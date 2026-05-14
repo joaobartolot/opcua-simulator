@@ -1,11 +1,13 @@
 services:
   opcua-simulator:
     build: .
-    command: simulator
+    command: simulator-web
     ports:
       - "4840:4840"
+      - "8080:8080"
     environment:
       SIMULATOR_CONFIG_PATH: ${SIMULATOR_CONFIG_PATH:-config/simulator.yaml}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:8080}
     volumes:
       - ./config:/app/config:ro
