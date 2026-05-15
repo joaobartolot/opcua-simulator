@@ -116,15 +116,42 @@ runtime:
   update_interval_ms: 1000
 
 variables:
-  - name: thermometer
-    data_type: float
-    default: 22.0
-    unit: celsius
-    writable: true
-
-  - name: pump_running
+  - name: pump
     data_type: boolean
     default: false
+    writable: true
+
+  - name: tank_1_valve
+    data_type: boolean
+    default: false
+    writable: true
+
+  - name: tank_1_flow
+    data_type: float
+    default: 0.0
+    unit: liters_per_minute
+    writable: true
+
+  - name: tank_2_valve
+    data_type: boolean
+    default: false
+    writable: true
+
+  - name: tank_2_flow
+    data_type: float
+    default: 0.0
+    unit: liters_per_minute
+    writable: true
+
+  - name: tank_3_valve
+    data_type: boolean
+    default: false
+    writable: true
+
+  - name: tank_3_flow
+    data_type: float
+    default: 0.0
+    unit: liters_per_minute
     writable: true
 ```
 

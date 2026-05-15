@@ -227,12 +227,44 @@ Before committing, the agent must:
 
 ### Commit Requirements
 
-Every commit created by the agent must include:
+Every commit created by the agent must use a concise conventional commit subject:
 
-- a clear and descriptive message
-- a summary of what was implemented
-- any known limitations or deferred work
-- any risks that were identified but not addressed
+```text
+type: message
+```
+
+Optional scope is allowed:
+
+```text
+type(scope): message
+```
+
+Allowed types:
+
+- feat
+- fix
+- refactor
+- test
+- docs
+- chore
+- perf
+- build
+- ci
+
+Examples:
+
+- feat: update default simulator tank tags
+- fix(opcua): handle server startup failure
+- docs(config): clarify variable node ids
+
+Commits must be atomic and focused on one logical change.
+
+Do NOT:
+
+- use undefined types
+- combine multiple types in one commit
+- write vague messages such as "update code" or "fix stuff"
+- include unnecessary implementation details in the subject
 
 ---
 
