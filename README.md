@@ -91,6 +91,9 @@ Environment variables are reserved for deployment overrides and secrets if secre
 Supported environment overrides:
 
 - `SIMULATOR_CONFIG_PATH`
+- `SIMULATOR_WEB_HOST`
+- `SIMULATOR_WEB_PORT`
+- `SIMULATOR_WEB_STATIC_DIR`
 - `PUBLIC_WEB_URL`
 - `LOG_LEVEL`
 
@@ -206,8 +209,15 @@ poetry run simulator-web
 The web UI is available at:
 
 ```text
-http://localhost:8080
+http://localhost:8000
 ```
+
+The HTTP web UI port and the OPC UA endpoint port must be different. If you
+move the OPC UA endpoint to `opc.tcp://0.0.0.0:8000`, browsers will not be able
+to open that port because it is serving OPC UA traffic, not HTTP.
+
+Use `SIMULATOR_WEB_PORT` to move the web UI/API if another local service already
+uses `8000`.
 
 Run with an alternate config:
 
@@ -237,13 +247,13 @@ docker compose up --build
 
 Compose starts the OPC UA simulator and web UI in one container.
 
-- Web UI/API: `http://localhost:8080`
+- Web UI/API: `http://localhost:8000`
 - OPC UA endpoint: `opc.tcp://localhost:4840`
 
 To scan the startup QR code from a phone, set the public URL to your computer's LAN address:
 
 ```bash
-PUBLIC_WEB_URL=http://<your-computer-lan-ip>:8080 docker compose up --build
+PUBLIC_WEB_URL=http://<your-computer-lan-ip>:8000 docker compose up --build
 ```
 
 The service prints an ASCII QR code for `PUBLIC_WEB_URL` during startup, and the web UI also shows the same QR code.

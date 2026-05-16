@@ -5,6 +5,7 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import uvicorn
 
@@ -60,6 +61,15 @@ def web_main(
     log_level = os.getenv("LOG_LEVEL", "INFO")
     configure_logging(log_level)
     settings = settings_loader(args.config)
+    if _endpoint_port(settings.server.endpoint) == args.port:
+        print(
+            "web port conflicts with the OPC UA endpoint port. "
+            f"Use different ports for HTTP ({args.port}) and OPC UA "
+            f"({settings.server.endpoint}).",
+            file=sys.stderr,
+        )
+        return 2
+
     app = create_app(
         settings,
         static_dir=args.static_dir,
@@ -95,22 +105,30 @@ def _parse_web_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--host",
-        default=os.getenv("WEB_HOST", "0.0.0.0"),
+        default=os.getenv("SIMULATOR_WEB_HOST", "0.0.0.0"),
         help="HTTP host for the web UI and API.",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.getenv("WEB_PORT", "8080")),
+        default=int(os.getenv("SIMULATOR_WEB_PORT", "8000")),
         help="HTTP port for the web UI and API.",
     )
     parser.add_argument(
         "--static-dir",
         type=Path,
-        default=Path(os.getenv("WEB_STATIC_DIR", "frontend/dist")),
+        default=Path(os.getenv("SIMULATOR_WEB_STATIC_DIR", "frontend/dist")),
         help="Directory containing built React assets.",
     )
     return parser.parse_args(argv)
+
+
+def _endpoint_port(endpoint: str) -> int | None:
+    parsed = urlparse(endpoint)
+    try:
+        return parsed.port
+    except ValueError:
+        return None
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ from src.infrastructure.logger import get_logger
 from src.infrastructure.opcua_server import AsyncuaSimulatorServer
 
 
-DEFAULT_PUBLIC_WEB_URL = "http://localhost:8080"
+DEFAULT_PUBLIC_WEB_URL = "http://localhost:8000"
 LOGGER = get_logger(__name__)
 
 

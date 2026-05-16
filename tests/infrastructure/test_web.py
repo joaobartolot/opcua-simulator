@@ -41,7 +41,7 @@ def test_api_lists_variables_and_access_url() -> None:
 
     assert variables_response.status_code == 200
     assert variables_response.json()["variables"][0]["name"] == "pump_running"
-    assert access_response.json() == {"public_url": "http://phone.local:8080"}
+    assert access_response.json() == {"public_url": "http://phone.local:8000"}
 
 
 def test_api_updates_typed_values() -> None:
@@ -194,7 +194,7 @@ def _client() -> TestClient:
         create_app(
             settings,
             runtime=runtime,
-            public_web_url="http://phone.local:8080",
+            public_web_url="http://phone.local:8000",
         )
     )
 
