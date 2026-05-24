@@ -154,6 +154,55 @@ def test_api_creates_generated_runtime_variable_and_sets_auto_mode() -> None:
     assert auto_response.json()["auto_update"] is False
 
 
+def test_api_creates_totalizer_runtime_variable_with_boolean_link() -> None:
+    client = _client()
+
+    with client:
+        create_response = client.post(
+            "/api/variables",
+            json={
+                "name": "runtime_total",
+                "data_type": "float",
+                "default": 0.0,
+                "unit": "liters",
+                "generator": {
+                    "kind": "totalizer",
+                    "rate_liters_per_minute": 60.0,
+                    "enabled_by": "pump_running",
+                },
+            },
+        )
+
+    assert create_response.status_code == 201
+    payload = create_response.json()
+    assert payload["has_generator"] is True
+    assert payload["generator"]["kind"] == "totalizer"
+    assert payload["generator"]["rate_liters_per_minute"] == 60.0
+    assert payload["generator"]["enabled_by"] == "pump_running"
+
+
+def test_api_rejects_totalizer_runtime_variable_with_missing_link() -> None:
+    client = _client()
+
+    with client:
+        response = client.post(
+            "/api/variables",
+            json={
+                "name": "runtime_total",
+                "data_type": "float",
+                "default": 0.0,
+                "generator": {
+                    "kind": "totalizer",
+                    "rate_liters_per_minute": 60.0,
+                    "enabled_by": "missing_valve",
+                },
+            },
+        )
+
+    assert response.status_code == 400
+    assert "enabled_by" in response.json()["detail"]
+
+
 def test_api_rejects_generator_for_boolean_runtime_variable() -> None:
     client = _client()
 

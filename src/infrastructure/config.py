@@ -55,22 +55,36 @@ class RuntimeConfig(BaseModel):
 
 class GeneratorConfig(BaseModel):
     kind: str = "sine"
-    amplitude: float
-    period_ticks: int
+    amplitude: float | None = None
+    period_ticks: int | None = None
+    rate_liters_per_minute: float | None = None
+    enabled_by: str | None = None
 
     @field_validator("kind")
     @classmethod
     def normalize_kind(cls, value: str) -> str:
         normalized = value.strip().lower()
-        if normalized != "sine":
-            raise ValueError("only sine generators are supported")
+        if normalized not in {"sine", "totalizer"}:
+            raise ValueError("generator kind must be sine or totalizer")
         return normalized
+
+    @field_validator("enabled_by")
+    @classmethod
+    def normalize_enabled_by(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("enabled_by must not be empty")
+        return stripped
 
     def to_domain(self) -> GeneratorSettings:
         return GeneratorSettings(
             kind=self.kind,
             amplitude=self.amplitude,
             period_ticks=self.period_ticks,
+            rate_liters_per_minute=self.rate_liters_per_minute,
+            enabled_by=self.enabled_by,
         )
 
 

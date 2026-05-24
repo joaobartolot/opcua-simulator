@@ -33,8 +33,10 @@ class AutoUpdateRequest(BaseModel):
 
 class GeneratorRequest(BaseModel):
     kind: str = "sine"
-    amplitude: float
-    period_ticks: int
+    amplitude: float | None = None
+    period_ticks: int | None = None
+    rate_liters_per_minute: float | None = None
+    enabled_by: str | None = None
 
 
 class CreateVariableRequest(BaseModel):
@@ -47,6 +49,14 @@ class CreateVariableRequest(BaseModel):
     generator: GeneratorRequest | None = None
 
 
+class GeneratorResponse(BaseModel):
+    kind: str
+    amplitude: float | None
+    period_ticks: int | None
+    rate_liters_per_minute: float | None
+    enabled_by: str | None
+
+
 class VariableResponse(BaseModel):
     name: str
     node_id: str
@@ -56,6 +66,7 @@ class VariableResponse(BaseModel):
     writable: bool
     auto_update: bool
     has_generator: bool
+    generator: GeneratorResponse | None
 
 
 class VariablesResponse(BaseModel):
@@ -144,6 +155,8 @@ def create_app(
                         kind=request.generator.kind,
                         amplitude=request.generator.amplitude,
                         period_ticks=request.generator.period_ticks,
+                        rate_liters_per_minute=request.generator.rate_liters_per_minute,
+                        enabled_by=request.generator.enabled_by,
                     )
                     if request.generator is not None
                     else None
@@ -193,6 +206,20 @@ def _variable_response(variable: SimulatorVariable) -> VariableResponse:
         writable=variable.definition.writable,
         auto_update=variable.auto_update,
         has_generator=variable.definition.generator is not None,
+        generator=_generator_response(variable),
+    )
+
+
+def _generator_response(variable: SimulatorVariable) -> GeneratorResponse | None:
+    generator = variable.definition.generator
+    if generator is None:
+        return None
+    return GeneratorResponse(
+        kind=generator.kind,
+        amplitude=generator.amplitude,
+        period_ticks=generator.period_ticks,
+        rate_liters_per_minute=generator.rate_liters_per_minute,
+        enabled_by=generator.enabled_by,
     )
 
 

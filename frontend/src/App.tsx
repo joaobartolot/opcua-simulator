@@ -1,6 +1,15 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type DataType = "boolean" | "int" | "float" | "string";
+type GeneratorKind = "sine" | "totalizer";
+
+type GeneratorConfig = {
+  kind: GeneratorKind;
+  amplitude: number | null;
+  period_ticks: number | null;
+  rate_liters_per_minute: number | null;
+  enabled_by: string | null;
+};
 
 type SimulatorVariable = {
   name: string;
@@ -11,6 +20,7 @@ type SimulatorVariable = {
   writable: boolean;
   auto_update: boolean;
   has_generator: boolean;
+  generator: GeneratorConfig | null;
 };
 
 type VariablesResponse = {
@@ -32,8 +42,11 @@ type NewTagForm = {
   nodeId: string;
   writable: boolean;
   generatorEnabled: boolean;
+  generatorKind: GeneratorKind;
   amplitude: string;
   periodTicks: string;
+  rateLitersPerMinute: string;
+  enabledBy: string;
 };
 
 const emptyNewTagForm: NewTagForm = {
@@ -44,8 +57,11 @@ const emptyNewTagForm: NewTagForm = {
   nodeId: "",
   writable: true,
   generatorEnabled: false,
+  generatorKind: "sine",
   amplitude: "1",
-  periodTicks: "10"
+  periodTicks: "10",
+  rateLitersPerMinute: "60",
+  enabledBy: ""
 };
 
 export function App() {
@@ -106,6 +122,10 @@ export function App() {
   const sortedVariables = useMemo(
     () => [...variables].sort((left, right) => left.name.localeCompare(right.name)),
     [variables]
+  );
+  const booleanVariables = useMemo(
+    () => sortedVariables.filter((variable) => variable.data_type === "boolean"),
+    [sortedVariables]
   );
 
   async function loadAccess() {
@@ -189,11 +209,7 @@ export function App() {
       writable: newTag.writable,
       generator:
         newTag.generatorEnabled && isNumericType(newTag.dataType)
-          ? {
-              kind: "sine",
-              amplitude: Number.parseFloat(newTag.amplitude),
-              period_ticks: Number.parseInt(newTag.periodTicks, 10)
-            }
+          ? generatorForApi(newTag)
           : null
     };
 
@@ -301,6 +317,7 @@ export function App() {
         <AddTagModal
           form={newTag}
           error={newTagError}
+          booleanVariables={booleanVariables}
           onChange={(patch) => setNewTag((current) => ({ ...current, ...patch }))}
           onSubmit={createTag}
           onClose={closeAddTagModal}
@@ -313,12 +330,14 @@ export function App() {
 function AddTagModal({
   form,
   error,
+  booleanVariables,
   onChange,
   onSubmit,
   onClose
 }: {
   form: NewTagForm;
   error: string;
+  booleanVariables: SimulatorVariable[];
   onChange: (patch: Partial<NewTagForm>) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onClose: () => void;
@@ -456,7 +475,7 @@ function AddTagModal({
 
           <input
             value={form.amplitude}
-            disabled={!form.generatorEnabled || !generatorAllowed}
+            disabled={!form.generatorEnabled || !generatorAllowed || form.generatorKind !== "sine"}
             onChange={(event) => onChange({ amplitude: event.target.value })}
             type="number"
             step="any"
@@ -465,7 +484,7 @@ function AddTagModal({
           />
           <input
             value={form.periodTicks}
-            disabled={!form.generatorEnabled || !generatorAllowed}
+            disabled={!form.generatorEnabled || !generatorAllowed || form.generatorKind !== "sine"}
             onChange={(event) => onChange({ periodTicks: event.target.value })}
             type="number"
             step="1"
@@ -473,6 +492,55 @@ function AddTagModal({
             className="h-9 rounded border border-line bg-white px-2 text-sm disabled:bg-slate-100"
             placeholder="period"
           />
+
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            Generator type
+            <select
+              value={form.generatorKind}
+              disabled={!form.generatorEnabled || !generatorAllowed}
+              onChange={(event) =>
+                onChange({ generatorKind: event.target.value as GeneratorKind })
+              }
+              className="h-9 rounded border border-line bg-white px-2 text-sm text-ink disabled:bg-slate-100"
+            >
+              <option value="sine">sine</option>
+              <option value="totalizer">totalizer</option>
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            Rate liters/min
+            <input
+              value={form.rateLitersPerMinute}
+              disabled={
+                !form.generatorEnabled || !generatorAllowed || form.generatorKind !== "totalizer"
+              }
+              onChange={(event) => onChange({ rateLitersPerMinute: event.target.value })}
+              type="number"
+              step="any"
+              min="0"
+              className="h-9 rounded border border-line bg-white px-2 text-sm disabled:bg-slate-100"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600 md:col-span-2">
+            Enabled by
+            <select
+              value={form.enabledBy}
+              disabled={
+                !form.generatorEnabled || !generatorAllowed || form.generatorKind !== "totalizer"
+              }
+              onChange={(event) => onChange({ enabledBy: event.target.value })}
+              className="h-9 rounded border border-line bg-white px-2 text-sm text-ink disabled:bg-slate-100"
+            >
+              <option value="">always enabled</option>
+              {booleanVariables.map((variable) => (
+                <option key={variable.name} value={variable.name}>
+                  {variable.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
           {error ? <div className="text-sm text-red-700 md:col-span-2">{error}</div> : null}
         </div>
@@ -539,6 +607,9 @@ function VariableRow({
       <td className="px-3 py-3">
         <div className="flex flex-col gap-2">
           <span className="text-xs">{variable.auto_update ? "auto" : "manual"}</span>
+          {variable.generator ? (
+            <span className="text-xs text-slate-500">{generatorLabel(variable.generator)}</span>
+          ) : null}
           <button
             type="button"
             disabled={!variable.has_generator}
@@ -637,4 +708,28 @@ function valueForType(dataType: DataType, draft: string): boolean | number | str
 
 function isNumericType(dataType: DataType): boolean {
   return dataType === "int" || dataType === "float";
+}
+
+function generatorForApi(form: NewTagForm) {
+  if (form.generatorKind === "totalizer") {
+    return {
+      kind: "totalizer",
+      rate_liters_per_minute: Number.parseFloat(form.rateLitersPerMinute),
+      enabled_by: form.enabledBy || null
+    };
+  }
+
+  return {
+    kind: "sine",
+    amplitude: Number.parseFloat(form.amplitude),
+    period_ticks: Number.parseInt(form.periodTicks, 10)
+  };
+}
+
+function generatorLabel(generator: GeneratorConfig): string {
+  if (generator.kind === "totalizer") {
+    const rate = generator.rate_liters_per_minute ?? 0;
+    return generator.enabled_by ? `${rate} L/min by ${generator.enabled_by}` : `${rate} L/min`;
+  }
+  return "sine";
 }

@@ -43,14 +43,35 @@ class RuntimeSettings:
 @dataclass(frozen=True)
 class GeneratorSettings:
     kind: str
-    amplitude: float
-    period_ticks: int
+    amplitude: float | None = None
+    period_ticks: int | None = None
+    rate_liters_per_minute: float | None = None
+    enabled_by: str | None = None
 
     def __post_init__(self) -> None:
-        if self.kind != "sine":
-            raise ValueError("only sine generators are supported")
-        if self.period_ticks <= 0:
-            raise ValueError("generator period_ticks must be greater than zero")
+        kind = self.kind.strip().lower()
+        if kind not in {"sine", "totalizer"}:
+            raise ValueError("generator kind must be sine or totalizer")
+        object.__setattr__(self, "kind", kind)
+
+        if kind == "sine":
+            if self.amplitude is None:
+                raise ValueError("sine generator amplitude is required")
+            if self.period_ticks is None:
+                raise ValueError("sine generator period_ticks is required")
+            if self.period_ticks <= 0:
+                raise ValueError("generator period_ticks must be greater than zero")
+        if kind == "totalizer":
+            if self.rate_liters_per_minute is None:
+                raise ValueError("totalizer generator rate_liters_per_minute is required")
+            if self.rate_liters_per_minute <= 0:
+                raise ValueError("totalizer rate_liters_per_minute must be greater than zero")
+
+        if self.enabled_by is not None:
+            enabled_by = self.enabled_by.strip()
+            if not VARIABLE_NAME_PATTERN.fullmatch(enabled_by):
+                raise ValueError("generator enabled_by must reference a valid variable name")
+            object.__setattr__(self, "enabled_by", enabled_by)
 
 
 @dataclass(frozen=True)
@@ -93,6 +114,7 @@ class SimulatorSettings:
             raise ValueError("at least one simulator variable must be configured")
         _reject_duplicates("variable name", (variable.name for variable in self.variables))
         _reject_duplicates("variable node_id", (variable.node_id for variable in self.variables))
+        _validate_generator_links(self.variables)
 
 
 @dataclass
@@ -123,6 +145,7 @@ class SimulatorState:
 
     def __init__(self, settings: SimulatorSettings) -> None:
         self._lock = threading.RLock()
+        self._update_interval_ms = settings.runtime.update_interval_ms
         self._variables = {
             variable.name: SimulatorVariable(
                 definition=variable,
@@ -157,6 +180,7 @@ class SimulatorState:
                 for variable in self._variables.values()
             ):
                 raise ValueError(f"duplicate variable node_id: {definition.node_id}")
+            self._validate_generator_link(definition)
 
             variable = SimulatorVariable(
                 definition=definition,
@@ -193,16 +217,58 @@ class SimulatorState:
         with self._lock:
             for variable in self._variables.values():
                 if variable.auto_update and variable.definition.generator is not None:
-                    variable.value = generated_value(variable.definition, tick)
+                    variable.value = generated_value(
+                        variable.definition,
+                        tick,
+                        current_value=variable.value,
+                        update_interval_ms=self._update_interval_ms,
+                        enabled=_generator_enabled(variable.definition, self._variables),
+                    )
+
+    def _validate_generator_link(self, definition: VariableDefinition) -> None:
+        generator = definition.generator
+        if generator is None or generator.enabled_by is None:
+            return
+        linked_variable = self._variables.get(generator.enabled_by)
+        if linked_variable is None:
+            raise ValueError(
+                f"generator enabled_by references unknown variable: {generator.enabled_by}"
+            )
+        if linked_variable.data_type != DataType.BOOLEAN:
+            raise ValueError(
+                f"generator enabled_by must reference a boolean variable: {generator.enabled_by}"
+            )
 
 
-def generated_value(definition: VariableDefinition, tick: int) -> int | float:
+def generated_value(
+    definition: VariableDefinition,
+    tick: int,
+    *,
+    current_value: bool | int | float | str | None = None,
+    update_interval_ms: int = 1000,
+    enabled: bool = True,
+) -> int | float:
     generator = definition.generator
     if generator is None:
         raise ValueError(f"variable has no generator: {definition.name}")
 
-    angle = (tick / generator.period_ticks) * math.tau
-    raw_value = float(definition.default) + math.sin(angle) * generator.amplitude
+    if not enabled:
+        raw_value = float(current_value if current_value is not None else definition.default)
+    elif generator.kind == "sine":
+        period_ticks = generator.period_ticks
+        amplitude = generator.amplitude
+        if period_ticks is None or amplitude is None:
+            raise ValueError("sine generator is missing required settings")
+        angle = (tick / period_ticks) * math.tau
+        raw_value = float(definition.default) + math.sin(angle) * amplitude
+    else:
+        rate_liters_per_minute = generator.rate_liters_per_minute
+        if rate_liters_per_minute is None:
+            raise ValueError("totalizer generator is missing required settings")
+        base_value = current_value if current_value is not None else definition.default
+        raw_value = float(base_value) + (
+            rate_liters_per_minute * update_interval_ms / 60000
+        )
     if definition.data_type == DataType.INT:
         return int(round(raw_value))
     return round(raw_value, 3)
@@ -267,3 +333,31 @@ def _reject_duplicates(label: str, values: Any) -> None:
     if duplicates:
         duplicate_text = ", ".join(sorted(duplicates))
         raise ValueError(f"duplicate {label}: {duplicate_text}")
+
+
+def _validate_generator_links(variables: tuple[VariableDefinition, ...]) -> None:
+    variables_by_name = {variable.name: variable for variable in variables}
+    for variable in variables:
+        generator = variable.generator
+        if generator is None or generator.enabled_by is None:
+            continue
+        linked_variable = variables_by_name.get(generator.enabled_by)
+        if linked_variable is None:
+            raise ValueError(
+                f"generator enabled_by references unknown variable: {generator.enabled_by}"
+            )
+        if linked_variable.data_type != DataType.BOOLEAN:
+            raise ValueError(
+                f"generator enabled_by must reference a boolean variable: {generator.enabled_by}"
+            )
+
+
+def _generator_enabled(
+    definition: VariableDefinition,
+    variables: dict[str, SimulatorVariable],
+) -> bool:
+    generator = definition.generator
+    if generator is None or generator.enabled_by is None:
+        return True
+    linked_variable = variables[generator.enabled_by]
+    return bool(linked_variable.value)

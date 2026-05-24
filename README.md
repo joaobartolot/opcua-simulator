@@ -184,6 +184,31 @@ generator:
   period_ticks: 10
 ```
 
+Use a `totalizer` generator to simulate a PLC-exposed cumulative flowmeter tag.
+The value increases by `rate_liters_per_minute` according to
+`runtime.update_interval_ms`, so lower intervals produce more frequent updates:
+
+```yaml
+variables:
+  - name: inlet_valve_open
+    data_type: boolean
+    default: false
+
+  - name: inlet_liters_total
+    data_type: float
+    default: 0.0
+    unit: liters
+    generator:
+      kind: totalizer
+      rate_liters_per_minute: 120.0
+      enabled_by: inlet_valve_open
+```
+
+`enabled_by` is optional. When it references a boolean tag, the totalizer only
+accumulates while that boolean is `true`; when it is `false`, the current total is
+held. See `config/examples.yaml` for example-only tag patterns that can be copied
+into a real simulator config when needed.
+
 ---
 
 ## Running

@@ -9,6 +9,7 @@ from src.domain.models import (
     SimulatorState,
     VariableDefinition,
     coerce_value,
+    generated_value,
 )
 
 
@@ -68,6 +69,101 @@ def test_state_generates_numeric_values_only_when_configured() -> None:
     state.advance(1)
 
     assert state.get_variable("thermometer").value == 24.0
+
+
+def test_totalizer_accumulates_liters_from_runtime_interval() -> None:
+    simulator_settings = SimulatorSettings(
+        server=ServerSettings(),
+        runtime=RuntimeSettings(update_interval_ms=500),
+        variables=(
+            VariableDefinition(
+                "liters_total",
+                "ns=2;s=liters_total",
+                DataType.FLOAT,
+                0.0,
+                generator=GeneratorSettings(
+                    kind="totalizer",
+                    rate_liters_per_minute=60.0,
+                ),
+            ),
+        ),
+    )
+    state = SimulatorState(simulator_settings)
+
+    state.advance(0)
+    state.advance(1)
+
+    assert state.get_variable("liters_total").value == 1.0
+
+
+def test_totalizer_pauses_while_linked_boolean_is_false() -> None:
+    simulator_settings = SimulatorSettings(
+        server=ServerSettings(),
+        runtime=RuntimeSettings(update_interval_ms=1000),
+        variables=(
+            VariableDefinition("valve_open", "ns=2;s=valve_open", DataType.BOOLEAN, False),
+            VariableDefinition(
+                "liters_total",
+                "ns=2;s=liters_total",
+                DataType.FLOAT,
+                0.0,
+                generator=GeneratorSettings(
+                    kind="totalizer",
+                    rate_liters_per_minute=60.0,
+                    enabled_by="valve_open",
+                ),
+            ),
+        ),
+    )
+    state = SimulatorState(simulator_settings)
+
+    state.advance(0)
+    state.set_value("valve_open", True)
+    state.advance(1)
+    state.set_value("valve_open", False)
+    state.advance(2)
+
+    assert state.get_variable("liters_total").value == 1.0
+
+
+def test_rejects_invalid_totalizer_settings() -> None:
+    with pytest.raises(ValueError, match="rate_liters_per_minute"):
+        GeneratorSettings(kind="totalizer", rate_liters_per_minute=0.0)
+
+
+def test_rejects_generator_link_to_non_boolean_variable() -> None:
+    with pytest.raises(ValueError, match="enabled_by must reference a boolean"):
+        settings(
+            VariableDefinition("flow", "ns=2;s=flow", DataType.FLOAT, 0.0),
+            VariableDefinition(
+                "liters_total",
+                "ns=2;s=liters_total",
+                DataType.FLOAT,
+                0.0,
+                generator=GeneratorSettings(
+                    kind="totalizer",
+                    rate_liters_per_minute=60.0,
+                    enabled_by="flow",
+                ),
+            ),
+        )
+
+
+def test_generated_totalizer_value_can_be_calculated_directly() -> None:
+    definition = VariableDefinition(
+        "liters_total",
+        "ns=2;s=liters_total",
+        DataType.FLOAT,
+        10.0,
+        generator=GeneratorSettings(kind="totalizer", rate_liters_per_minute=30.0),
+    )
+
+    assert generated_value(
+        definition,
+        0,
+        current_value=10.0,
+        update_interval_ms=1000,
+    ) == 10.5
 
 
 def test_rejects_duplicate_names_and_node_ids() -> None:

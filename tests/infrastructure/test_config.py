@@ -70,6 +70,34 @@ def test_explicit_node_id_overrides_template(tmp_path: Path) -> None:
     assert settings.variables[0].node_id == "ns=4;s=Device.Custom.Sensor"
 
 
+def test_loads_totalizer_generator_with_boolean_link(tmp_path: Path) -> None:
+    config_path = tmp_path / "simulator.yaml"
+    write_config(
+        config_path,
+        """
+  - name: valve_open
+    data_type: boolean
+    default: false
+  - name: liters_total
+    data_type: float
+    default: 0.0
+    unit: liters
+    generator:
+      kind: totalizer
+      rate_liters_per_minute: 42.0
+      enabled_by: valve_open
+""",
+    )
+
+    settings = load_settings(config_path)
+
+    generator = settings.variables[1].generator
+    assert generator is not None
+    assert generator.kind == "totalizer"
+    assert generator.rate_liters_per_minute == 42.0
+    assert generator.enabled_by == "valve_open"
+
+
 def test_env_config_path_selects_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config_path = tmp_path / "selected.yaml"
     write_config(config_path)
@@ -121,6 +149,25 @@ def test_rejects_duplicate_node_ids(tmp_path: Path) -> None:
     node_id: ns=2;s=sensor
     data_type: float
     default: 2.0
+""",
+    )
+
+    with pytest.raises(ValidationError):
+        load_settings(config_path)
+
+
+def test_rejects_totalizer_link_to_missing_variable(tmp_path: Path) -> None:
+    config_path = tmp_path / "simulator.yaml"
+    write_config(
+        config_path,
+        """
+  - name: liters_total
+    data_type: float
+    default: 0.0
+    generator:
+      kind: totalizer
+      rate_liters_per_minute: 60.0
+      enabled_by: valve_open
 """,
     )
 

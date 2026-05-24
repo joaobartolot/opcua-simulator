@@ -1,0 +1,54 @@
+server:
+  endpoint: opc.tcp://0.0.0.0:4840
+  namespace_uri: urn:opcua-simulator-examples
+  object_name: ExampleSimulator
+
+node_id_template: ns=2;s={name}
+
+runtime:
+  update_interval_ms: 250
+
+variables:
+  - name: inlet_valve_open
+    data_type: boolean
+    default: false
+    writable: true
+
+  - name: inlet_liters_total
+    data_type: float
+    default: 0.0
+    unit: liters
+    writable: true
+    generator:
+      kind: totalizer
+      rate_liters_per_minute: 120.0
+      enabled_by: inlet_valve_open
+
+  - name: outlet_liters_total
+    data_type: float
+    default: 0.0
+    unit: liters
+    writable: true
+    generator:
+      kind: totalizer
+      rate_liters_per_minute: 75.0
+
+  - name: tank_level_wave
+    data_type: float
+    default: 50.0
+    unit: percent
+    writable: true
+    generator:
+      kind: sine
+      amplitude: 5.0
+      period_ticks: 40
+
+  - name: pump_running
+    data_type: boolean
+    default: false
+    writable: true
+
+  - name: batch_id
+    data_type: string
+    default: local-test
+    writable: true
