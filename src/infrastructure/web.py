@@ -15,6 +15,15 @@ from qrcode.image.svg import SvgPathImage
 
 from src.application.runtime import SimulatorRuntime
 from src.domain.models import DataType, GeneratorSettings, SimulatorSettings, SimulatorVariable
+from src.infrastructure.opcua_browser import (
+    DEFAULT_BROWSER_MAX_DEPTH,
+    DEFAULT_BROWSER_MAX_NODES,
+    BrowseResult,
+    BrowserConnection,
+    BrowserNode,
+    OpcuaBrowser,
+    browser_default_endpoint,
+)
 from src.infrastructure.logger import get_logger
 from src.infrastructure.opcua_server import AsyncuaSimulatorServer
 
@@ -82,14 +91,60 @@ class AccessResponse(BaseModel):
     public_url: str
 
 
+class BrowserDefaultsResponse(BaseModel):
+    endpoint: str
+    max_depth: int
+    max_nodes: int
+
+
+class BrowserConnectionRequest(BaseModel):
+    endpoint: str
+    username: str | None = None
+    password: str | None = None
+
+
+class BrowseRequest(BrowserConnectionRequest):
+    node_id: str | None = None
+    path: str | None = None
+    relative_path: str | None = None
+
+
+class ExpandRequest(BrowseRequest):
+    max_depth: int = DEFAULT_BROWSER_MAX_DEPTH
+    max_nodes: int = DEFAULT_BROWSER_MAX_NODES
+
+
+class BrowserNodeResponse(BaseModel):
+    node_id: str
+    browse_name: str
+    display_name: str
+    node_class: str
+    path: str
+    relative_path: str
+    has_children: bool
+    child_count: int | None
+    value: Any | None
+    value_error: str | None
+    browse_error: str | None
+    children: list["BrowserNodeResponse"]
+
+
+class BrowseResponse(BaseModel):
+    node: BrowserNodeResponse
+    truncated: bool
+    visited_nodes: int
+
+
 def create_app(
     settings: SimulatorSettings,
     *,
     runtime: SimulatorRuntime | None = None,
     static_dir: Path | None = None,
     public_web_url: str | None = None,
+    opcua_browser: OpcuaBrowser | None = None,
 ) -> FastAPI:
     app_runtime = runtime or SimulatorRuntime(settings, AsyncuaSimulatorServer())
+    browser = opcua_browser or OpcuaBrowser()
     resolved_public_url = public_web_url or os.getenv("PUBLIC_WEB_URL", DEFAULT_PUBLIC_WEB_URL)
     resolved_static_dir = static_dir or Path("frontend/dist")
 
@@ -114,6 +169,54 @@ def create_app(
     @app.get("/api/access", response_model=AccessResponse)
     async def access() -> AccessResponse:
         return AccessResponse(public_url=resolved_public_url)
+
+    @app.get("/api/browser/defaults", response_model=BrowserDefaultsResponse)
+    async def browser_defaults() -> BrowserDefaultsResponse:
+        return BrowserDefaultsResponse(
+            endpoint=browser_default_endpoint(settings.server.endpoint),
+            max_depth=DEFAULT_BROWSER_MAX_DEPTH,
+            max_nodes=DEFAULT_BROWSER_MAX_NODES,
+        )
+
+    @app.post("/api/browser/browse", response_model=BrowseResponse)
+    async def browse_nodes(request: BrowseRequest) -> BrowseResponse:
+        try:
+            result = await browser.browse(
+                BrowserConnection(
+                    endpoint=request.endpoint,
+                    username=request.username,
+                    password=request.password,
+                ),
+                node_id=request.node_id,
+                path=request.path,
+                relative_path=request.relative_path,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except Exception as error:
+            raise HTTPException(status_code=502, detail=f"OPC UA browse failed: {error}") from error
+        return _browse_response(result)
+
+    @app.post("/api/browser/expand", response_model=BrowseResponse)
+    async def expand_nodes(request: ExpandRequest) -> BrowseResponse:
+        try:
+            result = await browser.expand(
+                BrowserConnection(
+                    endpoint=request.endpoint,
+                    username=request.username,
+                    password=request.password,
+                ),
+                node_id=request.node_id,
+                path=request.path,
+                relative_path=request.relative_path,
+                max_depth=request.max_depth,
+                max_nodes=request.max_nodes,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except Exception as error:
+            raise HTTPException(status_code=502, detail=f"OPC UA expand failed: {error}") from error
+        return _browse_response(result)
 
     @app.get("/api/qr.svg")
     async def qr_svg() -> Response:
@@ -193,6 +296,10 @@ def create_app(
         async def index() -> FileResponse:
             return FileResponse(resolved_static_dir / "index.html")
 
+        @app.get("/browser")
+        async def browser_index() -> FileResponse:
+            return FileResponse(resolved_static_dir / "index.html")
+
     return app
 
 
@@ -220,6 +327,31 @@ def _generator_response(variable: SimulatorVariable) -> GeneratorResponse | None
         period_ticks=generator.period_ticks,
         rate_liters_per_minute=generator.rate_liters_per_minute,
         enabled_by=generator.enabled_by,
+    )
+
+
+def _browse_response(result: BrowseResult) -> BrowseResponse:
+    return BrowseResponse(
+        node=_browser_node_response(result.node),
+        truncated=result.truncated,
+        visited_nodes=result.visited_nodes,
+    )
+
+
+def _browser_node_response(node: BrowserNode) -> BrowserNodeResponse:
+    return BrowserNodeResponse(
+        node_id=node.node_id,
+        browse_name=node.browse_name,
+        display_name=node.display_name,
+        node_class=node.node_class,
+        path=node.path,
+        relative_path=node.relative_path,
+        has_children=node.has_children,
+        child_count=node.child_count,
+        value=node.value,
+        value_error=node.value_error,
+        browse_error=node.browse_error,
+        children=[_browser_node_response(child) for child in node.children],
     )
 
 

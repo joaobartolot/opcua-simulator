@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from src.application.runtime import SimulatorRuntime
@@ -234,6 +236,65 @@ def test_api_qr_svg_returns_image() -> None:
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/svg+xml"
     assert b"<svg" in response.content
+
+
+def test_api_browser_defaults_normalizes_local_endpoint() -> None:
+    settings = _settings()
+    settings = SimulatorSettings(
+        server=ServerSettings(endpoint="opc.tcp://0.0.0.0:4840"),
+        runtime=settings.runtime,
+        variables=settings.variables,
+    )
+    runtime = SimulatorRuntime(settings, FakeServer(), sleep=long_sleep)
+    client = TestClient(create_app(settings, runtime=runtime))
+
+    with client:
+        response = client.get("/api/browser/defaults")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "endpoint": "opc.tcp://127.0.0.1:4840",
+        "max_depth": 6,
+        "max_nodes": 500,
+    }
+
+
+def test_api_browser_rejects_empty_endpoint() -> None:
+    client = _client()
+
+    with client:
+        response = client.post("/api/browser/browse", json={"endpoint": " "})
+
+    assert response.status_code == 400
+    assert "endpoint" in response.json()["detail"]
+
+
+def test_api_browser_rejects_invalid_expand_limits() -> None:
+    client = _client()
+
+    with client:
+        response = client.post(
+            "/api/browser/expand",
+            json={"endpoint": "opc.tcp://127.0.0.1:4840", "max_depth": 0},
+        )
+
+    assert response.status_code == 400
+    assert "max_depth" in response.json()["detail"]
+
+
+def test_browser_page_returns_react_app(tmp_path: Path) -> None:
+    static_dir = tmp_path / "dist"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("<main>app</main>", encoding="utf-8")
+    settings = _settings()
+    runtime = SimulatorRuntime(settings, FakeServer(), sleep=long_sleep)
+    client = TestClient(create_app(settings, runtime=runtime, static_dir=static_dir))
+
+    with client:
+        response = client.get("/browser")
+
+    assert response.status_code == 200
+    assert response.text == "<main>app</main>"
 
 
 def _client() -> TestClient:

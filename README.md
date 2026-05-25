@@ -237,6 +237,21 @@ The web UI is available at:
 http://localhost:8000
 ```
 
+The OPC UA browser page is available at:
+
+```text
+http://localhost:8000/browser
+```
+
+Use the browser page to inspect the address space of the local simulator or a
+real OPC UA server. The connection popup defaults to the simulator endpoint and
+supports optional username/password credentials. Credentials are only used for
+browser requests and are not saved to simulator configuration.
+
+The browser tree loads branches on demand. `Expand all` recursively browses from
+the selected node with safety caps so large PLC address spaces do not lock up the
+web UI.
+
 The HTTP web UI port and the OPC UA endpoint port must be different. If you
 move the OPC UA endpoint to `opc.tcp://0.0.0.0:8000`, browsers will not be able
 to open that port because it is serving OPC UA traffic, not HTTP.

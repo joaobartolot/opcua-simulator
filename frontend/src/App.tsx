@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, MouseEvent, useEffect, useMemo, useState } from "react";
 
 type DataType = "boolean" | "int" | "float" | "string";
 type GeneratorKind = "sine" | "totalizer";
@@ -25,6 +25,33 @@ type SimulatorVariable = {
 
 type VariablesResponse = {
   variables: SimulatorVariable[];
+};
+
+type BrowserDefaultsResponse = {
+  endpoint: string;
+  max_depth: number;
+  max_nodes: number;
+};
+
+type BrowserNode = {
+  node_id: string;
+  browse_name: string;
+  display_name: string;
+  node_class: string;
+  path: string;
+  relative_path: string;
+  has_children: boolean;
+  child_count: number | null;
+  value: unknown | null;
+  value_error: string | null;
+  browse_error: string | null;
+  children: BrowserNode[];
+};
+
+type BrowseResponse = {
+  node: BrowserNode;
+  truncated: boolean;
+  visited_nodes: number;
 };
 
 type AccessResponse = {
@@ -65,6 +92,30 @@ const emptyNewTagForm: NewTagForm = {
 };
 
 export function App() {
+  const [path, setPath] = useState(window.location.pathname);
+
+  function navigate(nextPath: string) {
+    window.history.pushState(null, "", nextPath);
+    setPath(nextPath);
+  }
+
+  useEffect(() => {
+    function onPopState() {
+      setPath(window.location.pathname);
+    }
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  if (path === "/browser") {
+    return <BrowserPage onNavigate={navigate} />;
+  }
+
+  return <SimulatorPage onNavigate={navigate} />;
+}
+
+function SimulatorPage({ onNavigate }: { onNavigate: (path: string) => void }) {
   const [variables, setVariables] = useState<SimulatorVariable[]>([]);
   const [drafts, setDrafts] = useState<DraftValues>({});
   const [errors, setErrors] = useState<RowErrors>({});
@@ -255,6 +306,13 @@ export function App() {
           <div className="flex items-center gap-3 text-sm">
             <button
               type="button"
+              onClick={() => onNavigate("/browser")}
+              className="rounded border border-line bg-white px-3 py-1.5 font-medium"
+            >
+              Browser
+            </button>
+            <button
+              type="button"
               onClick={openAddTagModal}
               className="rounded bg-accent px-3 py-1.5 font-medium text-white"
             >
@@ -323,6 +381,273 @@ export function App() {
           onClose={closeAddTagModal}
         />
       ) : null}
+    </main>
+  );
+}
+
+function BrowserPage({ onNavigate }: { onNavigate: (path: string) => void }) {
+  const [endpoint, setEndpoint] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [root, setRoot] = useState<BrowserNode | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [status, setStatus] = useState("not connected");
+  const [error, setError] = useState("");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [limits, setLimits] = useState({ maxDepth: 6, maxNodes: 500 });
+  const [menu, setMenu] = useState<{ x: number; y: number; node: BrowserNode } | null>(null);
+
+  const selectedNode = useMemo(
+    () => (root && selectedNodeId ? findNode(root, selectedNodeId) : root),
+    [root, selectedNodeId]
+  );
+
+  useEffect(() => {
+    void loadBrowserDefaults();
+  }, []);
+
+  useEffect(() => {
+    if (!isSettingsOpen) {
+      return;
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsSettingsOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [isSettingsOpen]);
+
+  useEffect(() => {
+    function closeMenu() {
+      setMenu(null);
+    }
+
+    window.addEventListener("click", closeMenu);
+    return () => window.removeEventListener("click", closeMenu);
+  }, []);
+
+  async function loadBrowserDefaults() {
+    const response = await fetch("/api/browser/defaults");
+    if (!response.ok) {
+      return;
+    }
+    const payload = (await response.json()) as BrowserDefaultsResponse;
+    setEndpoint(payload.endpoint);
+    setLimits({ maxDepth: payload.max_depth, maxNodes: payload.max_nodes });
+  }
+
+  function connectionBody(node?: BrowserNode) {
+    return {
+      endpoint,
+      username: username.trim() || null,
+      password: password || null,
+      node_id: node?.node_id ?? null,
+      path: node?.path ?? null,
+      relative_path: node?.relative_path ?? null
+    };
+  }
+
+  async function connect() {
+    setError("");
+    setStatus("connecting");
+    const response = await fetch("/api/browser/browse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(connectionBody())
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ detail: "browse failed" }));
+      setStatus("offline");
+      setError(String(payload.detail ?? "browse failed"));
+      return;
+    }
+
+    const payload = (await response.json()) as BrowseResponse;
+    setRoot(payload.node);
+    setSelectedNodeId(payload.node.node_id);
+    setExpanded(new Set([payload.node.node_id]));
+    setStatus("connected");
+    setIsSettingsOpen(false);
+  }
+
+  async function loadChildren(node: BrowserNode) {
+    setError("");
+    const response = await fetch("/api/browser/browse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(connectionBody(node))
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ detail: "browse failed" }));
+      setError(String(payload.detail ?? "browse failed"));
+      return;
+    }
+
+    const payload = (await response.json()) as BrowseResponse;
+    setRoot((current) => (current ? replaceNode(current, payload.node) : payload.node));
+    setExpanded((current) => new Set(current).add(node.node_id));
+  }
+
+  async function expandAll() {
+    const startNode = selectedNode ?? root;
+    if (!startNode) {
+      return;
+    }
+
+    setError("");
+    setStatus("expanding");
+    const response = await fetch("/api/browser/expand", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...connectionBody(startNode),
+        max_depth: limits.maxDepth,
+        max_nodes: limits.maxNodes
+      })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({ detail: "expand failed" }));
+      setStatus("connected");
+      setError(String(payload.detail ?? "expand failed"));
+      return;
+    }
+
+    const payload = (await response.json()) as BrowseResponse;
+    setRoot((current) => (current ? replaceNode(current, payload.node) : payload.node));
+    setExpanded((current) => {
+      const next = new Set(current);
+      collectExpandableNodeIds(payload.node, next);
+      return next;
+    });
+    setStatus(payload.truncated ? `truncated at ${payload.visited_nodes} nodes` : "connected");
+  }
+
+  function toggleNode(node: BrowserNode) {
+    setSelectedNodeId(node.node_id);
+    if (!node.has_children) {
+      return;
+    }
+    if (expanded.has(node.node_id)) {
+      setExpanded((current) => {
+        const next = new Set(current);
+        next.delete(node.node_id);
+        return next;
+      });
+      return;
+    }
+    if (node.children.length === 0) {
+      void loadChildren(node);
+      return;
+    }
+    setExpanded((current) => new Set(current).add(node.node_id));
+  }
+
+  function openContextMenu(event: MouseEvent, node: BrowserNode) {
+    event.preventDefault();
+    setSelectedNodeId(node.node_id);
+    setMenu({ x: event.clientX, y: event.clientY, node });
+  }
+
+  async function copyText(value: string) {
+    await navigator.clipboard.writeText(value);
+    setMenu(null);
+  }
+
+  return (
+    <main className="min-h-screen bg-panel text-ink">
+      <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
+        <header className="flex flex-col justify-between gap-3 border-b border-line pb-4 md:flex-row md:items-end">
+          <div>
+            <h1 className="text-2xl font-semibold">OPC UA Browser</h1>
+            <p className="mt-1 break-all text-sm text-slate-600">{endpoint || "no endpoint"}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <button
+              type="button"
+              onClick={() => onNavigate("/")}
+              className="rounded border border-line bg-white px-3 py-1.5 font-medium"
+            >
+              Simulator
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              className="rounded border border-line bg-white px-3 py-1.5 font-medium"
+            >
+              Connection
+            </button>
+            <button
+              type="button"
+              onClick={expandAll}
+              disabled={!root}
+              className="rounded bg-accent px-3 py-1.5 font-medium text-white disabled:bg-slate-400"
+            >
+              Expand all
+            </button>
+            <span className="rounded border border-line bg-white px-2 py-1 font-mono">
+              {status}
+            </span>
+          </div>
+        </header>
+
+        {error ? <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">{error}</div> : null}
+
+        <section className="grid min-h-[70vh] gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="overflow-hidden rounded-md border border-line bg-white">
+            <div className="border-b border-line bg-slate-100 px-3 py-2 text-xs font-semibold uppercase text-slate-600">
+              Address Space
+            </div>
+            <div className="max-h-[70vh] overflow-auto p-2 text-sm">
+              {root ? (
+                <BrowserTree
+                  node={root}
+                  expanded={expanded}
+                  selectedNodeId={selectedNodeId}
+                  onToggle={toggleNode}
+                  onSelect={(node) => setSelectedNodeId(node.node_id)}
+                  onContextMenu={openContextMenu}
+                  onCopy={copyText}
+                />
+              ) : (
+                <div className="p-6 text-sm text-slate-600">
+                  Open Connection and connect to browse the OPC UA address space.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <aside className="rounded-md border border-line bg-white p-4">
+            <h2 className="text-sm font-semibold uppercase text-slate-600">Selected Node</h2>
+            {selectedNode ? (
+              <NodeDetails node={selectedNode} onCopy={copyText} />
+            ) : (
+              <p className="mt-3 text-sm text-slate-600">No node selected.</p>
+            )}
+          </aside>
+        </section>
+      </div>
+
+      {isSettingsOpen ? (
+        <BrowserSettingsModal
+          endpoint={endpoint}
+          username={username}
+          password={password}
+          onEndpointChange={setEndpoint}
+          onUsernameChange={setUsername}
+          onPasswordChange={setPassword}
+          onConnect={connect}
+          onClose={() => setIsSettingsOpen(false)}
+        />
+      ) : null}
+      {menu ? <CopyMenu menu={menu} onCopy={copyText} /> : null}
     </main>
   );
 }
@@ -565,6 +890,281 @@ function AddTagModal({
   );
 }
 
+function BrowserTree({
+  node,
+  expanded,
+  selectedNodeId,
+  onToggle,
+  onSelect,
+  onContextMenu,
+  onCopy,
+  depth = 0
+}: {
+  node: BrowserNode;
+  expanded: Set<string>;
+  selectedNodeId: string | null;
+  onToggle: (node: BrowserNode) => void;
+  onSelect: (node: BrowserNode) => void;
+  onContextMenu: (event: MouseEvent, node: BrowserNode) => void;
+  onCopy: (value: string) => void;
+  depth?: number;
+}) {
+  const isExpanded = expanded.has(node.node_id);
+  const isSelected = selectedNodeId === node.node_id;
+  const label = node.display_name || node.browse_name || node.node_id;
+
+  return (
+    <div>
+      <div
+        className={`grid min-h-9 grid-cols-[2rem_minmax(10rem,1fr)_8rem_7rem_5rem] items-center gap-2 rounded px-2 ${
+          isSelected ? "bg-teal-50" : "hover:bg-slate-50"
+        }`}
+        style={{ paddingLeft: `${depth * 18 + 8}px` }}
+        onContextMenu={(event) => onContextMenu(event, node)}
+      >
+        <button
+          type="button"
+          disabled={!node.has_children}
+          onClick={() => onToggle(node)}
+          className="h-7 w-7 rounded border border-line text-xs disabled:opacity-30"
+          title={isExpanded ? "Collapse" : "Expand"}
+        >
+          {node.has_children ? (isExpanded ? "-" : "+") : ""}
+        </button>
+        <button
+          type="button"
+          onClick={() => onSelect(node)}
+          className="min-w-0 text-left"
+          title={node.path}
+        >
+          <span className="block truncate font-medium">{label}</span>
+          <span className="block truncate font-mono text-xs text-slate-500">{node.node_id}</span>
+        </button>
+        <span className="truncate rounded border border-line bg-slate-50 px-2 py-1 font-mono text-xs">
+          {node.node_class}
+        </span>
+        <span className="truncate font-mono text-xs text-slate-700">
+          {node.value_error ? "read error" : formatBrowserValue(node.value)}
+        </span>
+        <button
+          type="button"
+          onClick={() => onCopy(node.node_id)}
+          className="rounded border border-line px-2 py-1 text-xs"
+        >
+          Copy
+        </button>
+      </div>
+      {isExpanded
+        ? node.children.map((child) => (
+            <BrowserTree
+              key={child.node_id}
+              node={child}
+              expanded={expanded}
+              selectedNodeId={selectedNodeId}
+              onToggle={onToggle}
+              onSelect={onSelect}
+              onContextMenu={onContextMenu}
+              onCopy={onCopy}
+              depth={depth + 1}
+            />
+          ))
+        : null}
+    </div>
+  );
+}
+
+function NodeDetails({ node, onCopy }: { node: BrowserNode; onCopy: (value: string) => void }) {
+  return (
+    <div className="mt-4 flex flex-col gap-3 text-sm">
+      <DetailRow label="Name" value={node.display_name || node.browse_name || node.node_id} />
+      <DetailRow label="Class" value={node.node_class} />
+      <DetailRow label="Value" value={node.value_error ? node.value_error : formatBrowserValue(node.value)} />
+      <DetailRow label="Children" value={String(node.child_count ?? "unknown")} />
+      <CopyField label="Node ID" value={node.node_id} onCopy={onCopy} />
+      <CopyField label="Full path" value={node.path} onCopy={onCopy} />
+      <CopyField label="Relative path" value={node.relative_path} onCopy={onCopy} />
+      {node.browse_error ? (
+        <div className="rounded border border-red-300 bg-red-50 p-2 text-xs text-red-800">
+          {node.browse_error}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs font-semibold uppercase text-slate-500">{label}</div>
+      <div className="mt-1 break-all rounded border border-line bg-slate-50 p-2 font-mono text-xs">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function CopyField({
+  label,
+  value,
+  onCopy
+}: {
+  label: string;
+  value: string;
+  onCopy: (value: string) => void;
+}) {
+  return (
+    <div>
+      <div className="text-xs font-semibold uppercase text-slate-500">{label}</div>
+      <div className="mt-1 flex gap-2">
+        <code className="min-w-0 flex-1 break-all rounded border border-line bg-slate-50 p-2 text-xs">
+          {value}
+        </code>
+        <button
+          type="button"
+          onClick={() => onCopy(value)}
+          className="h-9 rounded border border-line px-3 text-xs"
+        >
+          Copy
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BrowserSettingsModal({
+  endpoint,
+  username,
+  password,
+  onEndpointChange,
+  onUsernameChange,
+  onPasswordChange,
+  onConnect,
+  onClose
+}: {
+  endpoint: string;
+  username: string;
+  password: string;
+  onEndpointChange: (value: string) => void;
+  onUsernameChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
+  onConnect: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-6"
+      onClick={onClose}
+    >
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="browser-settings-title"
+        className="w-full max-w-xl rounded-md border border-line bg-white shadow-xl"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onConnect();
+        }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <h2 id="browser-settings-title" className="text-base font-semibold">
+            OPC UA connection
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded border border-line px-2 py-1 text-sm"
+          >
+            Close
+          </button>
+        </div>
+        <div className="grid gap-3 p-4">
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            Endpoint URL
+            <input
+              value={endpoint}
+              onChange={(event) => onEndpointChange(event.target.value)}
+              className="h-9 rounded border border-line bg-white px-2 font-mono text-sm text-ink"
+              placeholder="opc.tcp://127.0.0.1:4840"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            Username
+            <input
+              value={username}
+              onChange={(event) => onUsernameChange(event.target.value)}
+              className="h-9 rounded border border-line bg-white px-2 text-sm text-ink"
+              autoComplete="username"
+              placeholder="optional"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-slate-600">
+            Password
+            <input
+              value={password}
+              onChange={(event) => onPasswordChange(event.target.value)}
+              className="h-9 rounded border border-line bg-white px-2 text-sm text-ink"
+              type="password"
+              autoComplete="current-password"
+              placeholder="optional"
+            />
+          </label>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-line bg-slate-50 px-4 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-9 rounded border border-line bg-white px-4 text-sm"
+          >
+            Cancel
+          </button>
+          <button type="submit" className="h-9 rounded bg-accent px-4 text-sm font-medium text-white">
+            Connect
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function CopyMenu({
+  menu,
+  onCopy
+}: {
+  menu: { x: number; y: number; node: BrowserNode };
+  onCopy: (value: string) => void;
+}) {
+  return (
+    <div
+      className="fixed z-50 min-w-44 rounded-md border border-line bg-white p-1 text-sm shadow-xl"
+      style={{ left: menu.x, top: menu.y }}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        onClick={() => onCopy(menu.node.node_id)}
+        className="block w-full rounded px-3 py-2 text-left hover:bg-slate-100"
+      >
+        Copy node ID
+      </button>
+      <button
+        type="button"
+        onClick={() => onCopy(menu.node.path)}
+        className="block w-full rounded px-3 py-2 text-left hover:bg-slate-100"
+      >
+        Copy full path
+      </button>
+      <button
+        type="button"
+        onClick={() => onCopy(menu.node.relative_path)}
+        className="block w-full rounded px-3 py-2 text-left hover:bg-slate-100"
+      >
+        Copy relative path
+      </button>
+    </div>
+  );
+}
+
 function VariableRow({
   variable,
   draft,
@@ -732,4 +1332,49 @@ function generatorLabel(generator: GeneratorConfig): string {
     return generator.enabled_by ? `${rate} L/min by ${generator.enabled_by}` : `${rate} L/min`;
   }
   return "sine";
+}
+
+function formatBrowserValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
+function findNode(node: BrowserNode, nodeId: string): BrowserNode | null {
+  if (node.node_id === nodeId) {
+    return node;
+  }
+  for (const child of node.children) {
+    const found = findNode(child, nodeId);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+function replaceNode(current: BrowserNode, replacement: BrowserNode): BrowserNode {
+  if (current.node_id === replacement.node_id) {
+    return replacement;
+  }
+  return {
+    ...current,
+    children: current.children.map((child) => replaceNode(child, replacement))
+  };
+}
+
+function collectExpandableNodeIds(node: BrowserNode, output: Set<string>) {
+  if (node.has_children) {
+    output.add(node.node_id);
+  }
+  for (const child of node.children) {
+    collectExpandableNodeIds(child, output);
+  }
 }
