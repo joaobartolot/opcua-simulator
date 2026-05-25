@@ -267,7 +267,7 @@ opc.tcp://0.0.0.0:4840
 ## Docker
 
 ```bash
-docker compose up --build
+docker compose up
 ```
 
 Compose starts the OPC UA simulator and web UI in one container.
@@ -278,7 +278,7 @@ Compose starts the OPC UA simulator and web UI in one container.
 To scan the startup QR code from a phone, set the public URL to your computer's LAN address:
 
 ```bash
-PUBLIC_WEB_URL=http://<your-computer-lan-ip>:8000 docker compose up --build
+PUBLIC_WEB_URL=http://<your-computer-lan-ip>:8000 docker compose up
 ```
 
 The service prints an ASCII QR code for `PUBLIC_WEB_URL` during startup, and the web UI also shows the same QR code.
