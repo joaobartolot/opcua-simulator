@@ -1,4 +1,5 @@
 import { FormEvent, MouseEvent, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
 type DataType = "boolean" | "int" | "float" | "string";
 type GeneratorKind = "sine" | "totalizer";
@@ -113,6 +114,56 @@ export function App() {
   }
 
   return <SimulatorPage onNavigate={navigate} />;
+}
+
+function AppFrame({
+  activePage,
+  onNavigate,
+  children
+}: {
+  activePage: "simulator" | "browser";
+  onNavigate: (path: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <main className="min-h-screen bg-panel text-ink">
+      <div className="border-b border-line bg-white">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+          <div>
+            <div className="text-base font-semibold">OPC UA Simulator</div>
+            <div className="text-xs text-slate-500">Simulator controls and OPC UA browser</div>
+          </div>
+          <nav className="flex w-full items-center gap-5 border-t border-line pt-3 text-sm md:w-auto md:border-t-0 md:pt-0">
+            <button
+              type="button"
+              onClick={() => onNavigate("/")}
+              className={`border-b-2 px-0.5 py-1 font-medium ${
+                activePage === "simulator"
+                  ? "border-accent text-ink"
+                  : "border-transparent text-slate-600 hover:text-ink"
+              }`}
+            >
+              Simulator
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate("/browser")}
+              className={`border-b-2 px-0.5 py-1 font-medium ${
+                activePage === "browser"
+                  ? "border-accent text-ink"
+                  : "border-transparent text-slate-600 hover:text-ink"
+              }`}
+            >
+              Browser
+            </button>
+          </nav>
+        </div>
+      </div>
+      <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
+        {children}
+      </div>
+    </main>
+  );
 }
 
 function SimulatorPage({ onNavigate }: { onNavigate: (path: string) => void }) {
@@ -294,38 +345,30 @@ function SimulatorPage({ onNavigate }: { onNavigate: (path: string) => void }) {
   }
 
   return (
-    <main className="min-h-screen bg-panel text-ink">
-      <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
-        <header className="flex flex-col justify-between gap-3 border-b border-line pb-4 md:flex-row md:items-end">
-          <div>
-            <h1 className="text-2xl font-semibold">OPC UA Simulator</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Endpoint values and manual overrides
-            </p>
-          </div>
-          <div className="flex items-center gap-3 text-sm">
-            <button
-              type="button"
-              onClick={() => onNavigate("/browser")}
-              className="rounded border border-line bg-white px-3 py-1.5 font-medium"
-            >
-              Browser
-            </button>
-            <button
-              type="button"
-              onClick={openAddTagModal}
-              className="rounded bg-accent px-3 py-1.5 font-medium text-white"
-            >
-              Add tag
-            </button>
-            <span className="rounded border border-line bg-white px-2 py-1 font-mono">
-              {connection}
-            </span>
-            <span className="rounded border border-line bg-white px-2 py-1">
-              {variables.length} tags
-            </span>
-          </div>
-        </header>
+    <AppFrame activePage="simulator" onNavigate={onNavigate}>
+      <section className="flex flex-col justify-between gap-3 border-b border-line pb-4 md:flex-row md:items-end">
+        <div>
+          <h1 className="text-2xl font-semibold">Simulator tags</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Endpoint values and manual overrides
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <button
+            type="button"
+            onClick={openAddTagModal}
+            className="rounded bg-accent px-3 py-1.5 font-medium text-white"
+          >
+            Add tag
+          </button>
+          <span className="rounded border border-line bg-white px-2 py-1 font-mono">
+            {connection}
+          </span>
+          <span className="rounded border border-line bg-white px-2 py-1">
+            {variables.length} tags
+          </span>
+        </div>
+      </section>
 
         <section className="grid gap-4 lg:grid-cols-[1fr_280px]">
           <div className="overflow-hidden rounded-md border border-line bg-white">
@@ -370,7 +413,6 @@ function SimulatorPage({ onNavigate }: { onNavigate: (path: string) => void }) {
             </p>
           </aside>
         </section>
-      </div>
       {isAddTagOpen ? (
         <AddTagModal
           form={newTag}
@@ -381,7 +423,7 @@ function SimulatorPage({ onNavigate }: { onNavigate: (path: string) => void }) {
           onClose={closeAddTagModal}
         />
       ) : null}
-    </main>
+    </AppFrame>
   );
 }
 
@@ -562,41 +604,33 @@ function BrowserPage({ onNavigate }: { onNavigate: (path: string) => void }) {
   }
 
   return (
-    <main className="min-h-screen bg-panel text-ink">
-      <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
-        <header className="flex flex-col justify-between gap-3 border-b border-line pb-4 md:flex-row md:items-end">
-          <div>
-            <h1 className="text-2xl font-semibold">OPC UA Browser</h1>
-            <p className="mt-1 break-all text-sm text-slate-600">{endpoint || "no endpoint"}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            <button
-              type="button"
-              onClick={() => onNavigate("/")}
-              className="rounded border border-line bg-white px-3 py-1.5 font-medium"
-            >
-              Simulator
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsSettingsOpen(true)}
-              className="rounded border border-line bg-white px-3 py-1.5 font-medium"
-            >
-              Connection
-            </button>
-            <button
-              type="button"
-              onClick={expandAll}
-              disabled={!root}
-              className="rounded bg-accent px-3 py-1.5 font-medium text-white disabled:bg-slate-400"
-            >
-              Expand all
-            </button>
-            <span className="rounded border border-line bg-white px-2 py-1 font-mono">
-              {status}
-            </span>
-          </div>
-        </header>
+    <AppFrame activePage="browser" onNavigate={onNavigate}>
+      <section className="flex flex-col justify-between gap-3 border-b border-line pb-4 md:flex-row md:items-end">
+        <div>
+          <h1 className="text-2xl font-semibold">OPC UA Browser</h1>
+          <p className="mt-1 break-all text-sm text-slate-600">{endpoint || "no endpoint"}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <button
+            type="button"
+            onClick={() => setIsSettingsOpen(true)}
+            className="rounded border border-line bg-white px-3 py-1.5 font-medium"
+          >
+            Connection
+          </button>
+          <button
+            type="button"
+            onClick={expandAll}
+            disabled={!root}
+            className="rounded bg-accent px-3 py-1.5 font-medium text-white disabled:bg-slate-400"
+          >
+            Expand all
+          </button>
+          <span className="rounded border border-line bg-white px-2 py-1 font-mono">
+            {status}
+          </span>
+        </div>
+      </section>
 
         {error ? <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">{error}</div> : null}
 
@@ -633,7 +667,6 @@ function BrowserPage({ onNavigate }: { onNavigate: (path: string) => void }) {
             )}
           </aside>
         </section>
-      </div>
 
       {isSettingsOpen ? (
         <BrowserSettingsModal
@@ -648,7 +681,7 @@ function BrowserPage({ onNavigate }: { onNavigate: (path: string) => void }) {
         />
       ) : null}
       {menu ? <CopyMenu menu={menu} onCopy={copyText} /> : null}
-    </main>
+    </AppFrame>
   );
 }
 
